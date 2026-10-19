@@ -14,7 +14,8 @@ import {
   Search,
   X,
   Calendar,
-  Eye
+  Eye,
+  Tag
 } from 'lucide-react';
 
 export default function App() {
@@ -47,6 +48,14 @@ export default function App() {
   const [customerName, setCustomerName] = useState('Umum');
   const [paidAmount, setPaidAmount] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // State Modal Item Manual / Nominal Bebas (Ditambah adminFee)
+  const [isCustomItemModalOpen, setIsCustomItemModalOpen] = useState(false);
+  const [customItemForm, setCustomItemForm] = useState({
+    name: '',
+    price: '',
+    adminFee: ''
+  });
 
   // State Modal Edit Order
   const [editingOrder, setEditingOrder] = useState(null);
@@ -186,7 +195,7 @@ export default function App() {
       return;
     }
 
-    const existingIndex = cart.findIndex(item => item.id === product.id);
+    const existingIndex = cart.findIndex(item => item.id === product.id && !item.isCustom);
     if (existingIndex > -1) {
       const currentQty = cart[existingIndex].quantity;
       if (currentQty >= product.stock) {
@@ -197,15 +206,55 @@ export default function App() {
       updatedCart[existingIndex].quantity += 1;
       setCart(updatedCart);
     } else {
-      setCart([...cart, { ...product, quantity: 1 }]);
+      setCart([...cart, { ...product, quantity: 1, isCustom: false }]);
     }
+  };
+
+  // HANDLER: Menambahkan Item/Tagihan Manual + Biaya Admin ke Keranjang[cite: 5, 7]
+  const handleAddCustomItem = (e) => {
+    e.preventDefault();
+    if (!customItemForm.name || customItemForm.price === '') {
+      alert('Mohon isi nama layanan dan nominal harga!');
+      return;
+    }
+
+    const priceNum = Number(customItemForm.price);
+    const adminNum = Number(customItemForm.adminFee) || 0;
+
+    if (isNaN(priceNum) || priceNum < 0) {
+      alert('Harga harus berupa angka yang valid!');
+      return;
+    }
+
+    // Total harga jual adalah Nominal Tagihan + Biaya Admin
+    const totalSellingPrice = priceNum + adminNum;
+
+    // Nama item otomatis mendeskripsikan biaya admin jika diisi agar kasir/pembeli jelas
+    let finalItemName = customItemForm.name;
+    if (adminNum > 0) {
+      finalItemName += ` (Admin: Rp ${adminNum.toLocaleString('id-ID')})`;
+    }
+
+    const customItem = {
+      id: 'custom-' + Date.now(),
+      name: finalItemName,
+      selling_price: totalSellingPrice,
+      purchase_price: 0, // Biaya admin murni dianggap sebagai keuntungan/profit bersih
+      stock: 999999,
+      quantity: 1,
+      isCustom: true
+    };
+
+    setCart([...cart, customItem]);
+    setCustomItemForm({ name: '', price: '', adminFee: '' });
+    setIsCustomItemModalOpen(false);
   };
 
   const updateCartQuantity = (id, delta) => {
     setCart(cart.map(item => {
       if (item.id === id) {
         const newQty = item.quantity + delta;
-        if (newQty > item.stock) {
+        if (!item.isCustom && newQty > item.stock) {
           alert('Jumlah melebihi stok yang tersedia!');
           return item;
         }
@@ -215,7 +264,6 @@ export default function App() {
     }).filter(Boolean));
   };
 
-  // FUNGSI BARU: Untuk mengubah jumlah barang via ketik manual
   const handleCartQuantityChange = (id, value) => {
     const val = parseInt(value, 10);
     if (isNaN(val) || val <= 0) {
@@ -225,7 +273,7 @@ export default function App() {
 
     setCart(cart.map(item => {
       if (item.id === id) {
-        if (val > item.stock) {
+        if (!item.isCustom && val > item.stock) {
           alert(`Jumlah melebihi stok yang tersedia! (Stok: ${item.stock})`);
           return { ...item, quantity: item.stock };
         }
@@ -273,7 +321,7 @@ export default function App() {
 
       const orderItems = cart.map(item => ({
         order_id: orderData.id,
-        product_id: item.id,
+        product_id: item.isCustom ? null : item.id,
         quantity: item.quantity,
         price: item.selling_price
       }));
@@ -282,10 +330,12 @@ export default function App() {
       if (itemsError) throw itemsError;
 
       for (const item of cart) {
-        await supabase
-          .from('products')
-          .update({ stock: item.stock - item.quantity })
-          .eq('id', item.id);
+        if (!item.isCustom) {
+          await supabase
+            .from('products')
+            .update({ stock: item.stock - item.quantity })
+            .eq('id', item.id);
+        }
       }
 
       if (changeOrDebt < 0) {
@@ -502,6 +552,15 @@ export default function App() {
                     className="w-full pl-10 pr-4 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
+
+                {/* TOMBOL TAMBAH ITEM MANUAL / NOMINAL BEBAS */}
+                <button 
+                  onClick={() => setIsCustomItemModalOpen(true)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 text-sm font-semibold rounded-lg flex items-center justify-center gap-1.5 transition shadow-sm whitespace-nowrap"
+                >
+                  <Tag className="w-4 h-4" /> + Item Manual
+                </button>
+
                 <select 
                   value={selectedCategoryFilter}
                   onChange={(e) => setSelectedCategoryFilter(e.target.value)}
@@ -554,7 +613,12 @@ export default function App() {
                 {cart.map(item => (
                   <div key={item.id} className="flex justify-between items-center p-2 bg-gray-50 rounded-lg border border-gray-100">
                     <div className="flex-1 pr-2">
-                      <h4 className="font-semibold text-xs sm:text-sm text-gray-800 line-clamp-1">{item.name}</h4>
+                      <div className="flex items-center gap-1.5">
+                        <h4 className="font-semibold text-xs sm:text-sm text-gray-800 line-clamp-1">{item.name}</h4>
+                        {item.isCustom && (
+                          <span className="text-[9px] bg-emerald-100 text-emerald-700 font-semibold px-1.5 py-0.2 rounded">Manual</span>
+                        )}
+                      </div>
                       <p className="text-[10px] sm:text-xs text-gray-500">Rp {item.selling_price.toLocaleString('id-ID')}</p>
                     </div>
                     <div className="flex items-center gap-1">
@@ -564,7 +628,7 @@ export default function App() {
                       <input 
                         type="number" 
                         min="1" 
-                        max={item.stock}
+                        max={item.isCustom ? 999999 : item.stock}
                         value={item.quantity} 
                         onChange={(e) => handleCartQuantityChange(item.id, e.target.value)}
                         className="w-12 text-center text-xs sm:text-sm font-bold border rounded py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
@@ -837,7 +901,7 @@ export default function App() {
                       </span>
                     </td>
                     <td className="p-3 text-gray-600">
-                      {o.order_items?.map(item => `${item.products?.name || 'Produk'} (${item.quantity}x)`).join(', ')}
+                      {o.order_items?.map(item => `${item.products?.name || item.name || 'Layanan/Item'} (${item.quantity}x)`).join(', ')}
                     </td>
                     <td className="p-3 font-bold text-indigo-600 whitespace-nowrap">
                       Rp {o.total_amount?.toLocaleString('id-ID')}
@@ -976,6 +1040,77 @@ export default function App() {
 
       </main>
 
+      {/* MODAL POP-UP: TAMBAH ITEM MANUAL / NOMINAL BEBAS + BIAYA ADMIN */}
+      {isCustomItemModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center p-3 sm:p-4 z-50">
+          <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-5 sm:p-6 relative">
+            <button 
+              onClick={() => setIsCustomItemModalOpen(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <h3 className="text-base sm:text-lg font-bold text-gray-800 mb-1">Tambah Item / Layanan Manual</h3>
+            <p className="text-xs text-gray-500 mb-4">Digunakan untuk token listrik, tagihan, atau jasa nominal bebas.</p>
+
+            <form onSubmit={handleAddCustomItem} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Nama Layanan / Keterangan</label>
+                <input 
+                  type="text" 
+                  placeholder="Contoh: Token Listrik 100k / Listrik Pak Budi" 
+                  value={customItemForm.name} 
+                  onChange={(e) => setCustomItemForm({ ...customItemForm, name: e.target.value })}
+                  className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none text-xs sm:text-sm"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Nominal Harga (Rp)</label>
+                <input 
+                  type="number" 
+                  placeholder="Contoh: 100000" 
+                  value={customItemForm.price} 
+                  onChange={(e) => setCustomItemForm({ ...customItemForm, price: e.target.value })}
+                  className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none text-xs sm:text-sm"
+                  required
+                />
+              </div>
+
+              {/* FIELD BARU: BIAYA ADMIN / TAMBAHAN */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Biaya Admin / Tambahan (Rp) <span className="text-gray-400 font-normal">(Opsional)</span></label>
+                <input 
+                  type="number" 
+                  placeholder="Contoh: 2500" 
+                  value={customItemForm.adminFee} 
+                  onChange={(e) => setCustomItemForm({ ...customItemForm, adminFee: e.target.value })}
+                  className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none text-xs sm:text-sm"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button 
+                  type="button" 
+                  onClick={() => setIsCustomItemModalOpen(false)}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition text-xs sm:text-sm"
+                >
+                  Batal
+                </button>
+                <button 
+                  type="submit" 
+                  className="px-4 py-2 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 transition text-xs sm:text-sm"
+                >
+                  Masukkan ke Keranjang
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* POP-UP DETAIL LAPORAN */}
       {selectedDetailReport && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-3 sm:p-4 z-50">
@@ -1028,7 +1163,7 @@ export default function App() {
                         <ul className="list-disc list-inside space-y-0.5">
                           {tx.order_items?.map(item => (
                             <li key={item.id}>
-                              {item.products?.name || 'Produk'} ({item.quantity}x @ Rp {item.price?.toLocaleString('id-ID')})
+                              {item.products?.name || item.name || 'Layanan/Item'} ({item.quantity}x @ Rp {item.price?.toLocaleString('id-ID')})
                             </li>
                           ))}
                         </ul>
