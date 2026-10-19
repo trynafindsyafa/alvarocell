@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
+import logoSvg from './assets/logo-alvarocell.svg'; // Mengimpor logo SVG
 import { 
   ShoppingCart, 
   Package, 
@@ -415,12 +416,19 @@ export default function App() {
 
   return (
     <div className="min-h-screen w-full bg-gray-100 flex flex-col font-sans">
-      {/* HEADER NAVIGASI - FULL WIDTH */}
+      {/* HEADER NAVIGASI - FULL WIDTH & LOGO SVG */}
       <header className="bg-indigo-600 text-white shadow-md p-3 sm:p-4 sticky top-0 z-40 w-full">
         <div className="w-full px-2 sm:px-6 flex flex-col md:flex-row justify-between items-center gap-3">
-          <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
-            <ShoppingCart className="w-6 h-6 sm:w-7 sm:h-7" /> Alvarocell POS
-          </h1>
+          <div className="flex items-center gap-2.5">
+            {/* TAMPILAN LOGO SVG */}
+            <img 
+              src={logoSvg} 
+              alt="Alvarocell Logo" 
+              className="w-10 h-10 sm:w-12 sm:h-12 object-contain" 
+            />
+            <h1 className="text-xl sm:text-2xl font-bold tracking-wide">Alvarocell</h1>
+          </div>
+
           <nav className="flex w-full md:w-auto overflow-x-auto pb-1 md:pb-0 gap-1.5 sm:gap-2 no-scrollbar justify-start md:justify-end">
             <button 
               onClick={() => setActiveTab('pos')}
