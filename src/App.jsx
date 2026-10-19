@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
-import logoSvg from './assets/logo-alvarocell.svg'; // Mengimpor logo SVG
+import logoImg from './assets/logo.png';
+//import logoSvg from './assets/logo-alvarocell.svg'; // Mengimpor logo SVG
 import { 
   ShoppingCart, 
   Package, 
@@ -419,14 +420,13 @@ export default function App() {
       {/* HEADER NAVIGASI - FULL WIDTH & LOGO SVG */}
       <header className="bg-indigo-600 text-white shadow-md p-3 sm:p-4 sticky top-0 z-40 w-full">
         <div className="w-full px-2 sm:px-6 flex flex-col md:flex-row justify-between items-center gap-3">
-          <div className="flex items-center gap-2.5">
-            {/* TAMPILAN LOGO SVG */}
+          <div className="flex items-center gap-3">
             <img 
-              src={logoSvg} 
+              src={logoImg} 
               alt="Alvarocell Logo" 
-              className="w-10 h-10 sm:w-12 sm:h-12 object-contain" 
+              className="w-16 h-16 sm:w-18 sm:h-18 object-contain" 
             />
-            <h1 className="text-xl sm:text-2xl font-bold tracking-wide">Alvarocell</h1>
+            <h1 className="text-xl sm:text-3xl font-bold tracking-wide">Alvarocell</h1>
           </div>
 
           <nav className="flex w-full md:w-auto overflow-x-auto pb-1 md:pb-0 gap-1.5 sm:gap-2 no-scrollbar justify-start md:justify-end">
