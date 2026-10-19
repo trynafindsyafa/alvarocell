@@ -215,6 +215,26 @@ export default function App() {
     }).filter(Boolean));
   };
 
+  // FUNGSI BARU: Untuk mengubah jumlah barang via ketik manual
+  const handleCartQuantityChange = (id, value) => {
+    const val = parseInt(value, 10);
+    if (isNaN(val) || val <= 0) {
+      setCart(cart.map(item => item.id === id ? { ...item, quantity: 1 } : item));
+      return;
+    }
+
+    setCart(cart.map(item => {
+      if (item.id === id) {
+        if (val > item.stock) {
+          alert(`Jumlah melebihi stok yang tersedia! (Stok: ${item.stock})`);
+          return { ...item, quantity: item.stock };
+        }
+        return { ...item, quantity: val };
+      }
+      return item;
+    }));
+  };
+
   const removeFromCart = (id) => {
     setCart(cart.filter(item => item.id !== id));
   };
@@ -417,7 +437,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen w-full bg-gray-100 flex flex-col font-sans">
-      {/* HEADER NAVIGASI - FULL WIDTH & LOGO SVG */}
+      {/* HEADER NAVIGASI - FULL WIDTH & LOGO */}
       <header className="bg-indigo-600 text-white shadow-md p-3 sm:p-4 sticky top-0 z-40 w-full">
         <div className="w-full px-2 sm:px-6 flex flex-col md:flex-row justify-between items-center gap-3">
           <div className="flex items-center gap-3">
@@ -537,10 +557,21 @@ export default function App() {
                       <h4 className="font-semibold text-xs sm:text-sm text-gray-800 line-clamp-1">{item.name}</h4>
                       <p className="text-[10px] sm:text-xs text-gray-500">Rp {item.selling_price.toLocaleString('id-ID')}</p>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <button onClick={() => updateCartQuantity(item.id, -1)} className="w-5 h-5 sm:w-6 sm:h-6 bg-white border rounded flex items-center justify-center text-xs font-bold">-</button>
-                      <span className="text-xs sm:text-sm font-semibold">{item.quantity}</span>
-                      <button onClick={() => updateCartQuantity(item.id, 1)} className="w-5 h-5 sm:w-6 sm:h-6 bg-white border rounded flex items-center justify-center text-xs font-bold">+</button>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => updateCartQuantity(item.id, -1)} className="w-5 h-5 sm:w-6 sm:h-6 bg-white border rounded flex items-center justify-center text-xs font-bold hover:bg-gray-100">-</button>
+                      
+                      {/* INPUT MANUAL JUMLAH BARANG */}
+                      <input 
+                        type="number" 
+                        min="1" 
+                        max={item.stock}
+                        value={item.quantity} 
+                        onChange={(e) => handleCartQuantityChange(item.id, e.target.value)}
+                        className="w-12 text-center text-xs sm:text-sm font-bold border rounded py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                      />
+
+                      <button onClick={() => updateCartQuantity(item.id, 1)} className="w-5 h-5 sm:w-6 sm:h-6 bg-white border rounded flex items-center justify-center text-xs font-bold hover:bg-gray-100">+</button>
+                      
                       <button onClick={() => removeFromCart(item.id)} className="text-red-500 hover:text-red-700 ml-1">
                         <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                       </button>
