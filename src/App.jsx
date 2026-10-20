@@ -49,12 +49,12 @@ export default function App() {
   const [paidAmount, setPaidAmount] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // State Modal Item Manual / Nominal Bebas (Ditambah adminFee)
+  // State Modal Item Manual / Nominal Bebas (Menggunakan Harga Modal & Harga Jual)
   const [isCustomItemModalOpen, setIsCustomItemModalOpen] = useState(false);
   const [customItemForm, setCustomItemForm] = useState({
     name: '',
-    price: '',
-    adminFee: ''
+    purchasePrice: '', // Harga Modal
+    sellingPrice: ''   // Harga Jual Total
   });
 
   // State Modal Edit Order
@@ -210,43 +210,41 @@ export default function App() {
     }
   };
 
-  // HANDLER: Menambahkan Item/Tagihan Manual + Biaya Admin ke Keranjang[cite: 5, 7]
+  // HANDLER: Menambahkan Item Manual dengan Harga Modal & Harga Jual[cite: 9]
   const handleAddCustomItem = (e) => {
     e.preventDefault();
-    if (!customItemForm.name || customItemForm.price === '') {
-      alert('Mohon isi nama layanan dan nominal harga!');
+    if (!customItemForm.name || customItemForm.purchasePrice === '' || customItemForm.sellingPrice === '') {
+      alert('Mohon isi nama, harga modal, dan harga jual!');
       return;
     }
 
-    const priceNum = Number(customItemForm.price);
-    const adminNum = Number(customItemForm.adminFee) || 0;
+    const purchaseNum = Number(customItemForm.purchasePrice);
+    const sellingNum = Number(customItemForm.sellingPrice);
 
-    if (isNaN(priceNum) || priceNum < 0) {
+    if (isNaN(purchaseNum) || isNaN(sellingNum) || purchaseNum < 0 || sellingNum < 0) {
       alert('Harga harus berupa angka yang valid!');
       return;
     }
 
-    // Total harga jual adalah Nominal Tagihan + Biaya Admin
-    const totalSellingPrice = priceNum + adminNum;
-
-    // Nama item otomatis mendeskripsikan biaya admin jika diisi agar kasir/pembeli jelas
+    const profitNum = sellingNum - purchaseNum;
     let finalItemName = customItemForm.name;
-    if (adminNum > 0) {
-      finalItemName += ` (Admin: Rp ${adminNum.toLocaleString('id-ID')})`;
+    
+    if (profitNum > 0) {
+      finalItemName += ` (Untung: Rp ${profitNum.toLocaleString('id-ID')})`;
     }
 
     const customItem = {
       id: 'custom-' + Date.now(),
       name: finalItemName,
-      selling_price: totalSellingPrice,
-      purchase_price: 0, // Biaya admin murni dianggap sebagai keuntungan/profit bersih
+      selling_price: sellingNum,
+      purchase_price: purchaseNum, // Harga modal tersimpan untuk perhitungan profit[cite: 9]
       stock: 999999,
       quantity: 1,
       isCustom: true
     };
 
     setCart([...cart, customItem]);
-    setCustomItemForm({ name: '', price: '', adminFee: '' });
+    setCustomItemForm({ name: '', purchasePrice: '', sellingPrice: '' });
     setIsCustomItemModalOpen(false);
   };
 
@@ -319,11 +317,13 @@ export default function App() {
 
       if (orderError) throw orderError;
 
+      // PERBAIKAN: Menyertakan purchase_price ke database order_items
       const orderItems = cart.map(item => ({
         order_id: orderData.id,
         product_id: item.isCustom ? null : item.id,
         quantity: item.quantity,
-        price: item.selling_price
+        price: item.selling_price,
+        purchase_price: item.purchase_price || 0
       }));
 
       const { error: itemsError } = await supabase.from('order_items').insert(orderItems);
@@ -431,7 +431,8 @@ export default function App() {
       let orderRevenue = order.total_amount || 0;
 
       order.order_items?.forEach(item => {
-        const costPrice = item.products?.purchase_price || 0;
+        // Mengambil purchase_price langsung dari order_items jika ada, atau dari produk reguler
+        const costPrice = item.purchase_price ?? item.products?.purchase_price ?? 0;
         const sellPrice = item.price || 0;
         const qty = item.quantity || 0;
         orderProfit += (sellPrice - costPrice) * qty;
@@ -487,7 +488,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen w-full bg-gray-100 flex flex-col font-sans">
-      {/* HEADER NAVIGASI - FULL WIDTH & LOGO */}
+      {/* HEADER NAVIGASI */}
       <header className="bg-indigo-600 text-white shadow-md p-3 sm:p-4 sticky top-0 z-40 w-full">
         <div className="w-full px-2 sm:px-6 flex flex-col md:flex-row justify-between items-center gap-3">
           <div className="flex items-center gap-3">
@@ -534,7 +535,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* KONTEN UTAMA - FULL WIDTH */}
+      {/* KONTEN UTAMA */}
       <main className="flex-1 p-3 sm:p-5 md:p-6 w-full">
         
         {/* TAB 1: KASIR / POS */}
@@ -553,7 +554,6 @@ export default function App() {
                   />
                 </div>
 
-                {/* TOMBOL TAMBAH ITEM MANUAL / NOMINAL BEBAS */}
                 <button 
                   onClick={() => setIsCustomItemModalOpen(true)}
                   className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 text-sm font-semibold rounded-lg flex items-center justify-center gap-1.5 transition shadow-sm whitespace-nowrap"
@@ -624,7 +624,6 @@ export default function App() {
                     <div className="flex items-center gap-1">
                       <button onClick={() => updateCartQuantity(item.id, -1)} className="w-5 h-5 sm:w-6 sm:h-6 bg-white border rounded flex items-center justify-center text-xs font-bold hover:bg-gray-100">-</button>
                       
-                      {/* INPUT MANUAL JUMLAH BARANG */}
                       <input 
                         type="number" 
                         min="1" 
@@ -1040,7 +1039,7 @@ export default function App() {
 
       </main>
 
-      {/* MODAL POP-UP: TAMBAH ITEM MANUAL / NOMINAL BEBAS + BIAYA ADMIN */}
+      {/* MODAL POP-UP: TAMBAH ITEM MANUAL */}
       {isCustomItemModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center p-3 sm:p-4 z-50">
           <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-5 sm:p-6 relative">
@@ -1052,7 +1051,7 @@ export default function App() {
             </button>
 
             <h3 className="text-base sm:text-lg font-bold text-gray-800 mb-1">Tambah Item / Layanan Manual</h3>
-            <p className="text-xs text-gray-500 mb-4">Digunakan untuk token listrik, tagihan, atau jasa nominal bebas.</p>
+            <p className="text-xs text-gray-500 mb-4">Masukkan harga modal dan harga jual total ke pelanggan.</p>
 
             <form onSubmit={handleAddCustomItem} className="space-y-3.5">
               <div>
@@ -1068,26 +1067,26 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Nominal Harga (Rp)</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Harga Modal (Rp) <span className="text-gray-400 font-normal">(Dari Server/Dasar)</span></label>
                 <input 
                   type="number" 
                   placeholder="Contoh: 100000" 
-                  value={customItemForm.price} 
-                  onChange={(e) => setCustomItemForm({ ...customItemForm, price: e.target.value })}
+                  value={customItemForm.purchasePrice} 
+                  onChange={(e) => setCustomItemForm({ ...customItemForm, purchasePrice: e.target.value })}
                   className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none text-xs sm:text-sm"
                   required
                 />
               </div>
 
-              {/* FIELD BARU: BIAYA ADMIN / TAMBAHAN */}
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Biaya Admin / Tambahan (Rp) <span className="text-gray-400 font-normal">(Opsional)</span></label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Harga Jual (Rp) <span className="text-gray-400 font-normal">(Total dibayar pembeli termasuk admin)</span></label>
                 <input 
                   type="number" 
-                  placeholder="Contoh: 2500" 
-                  value={customItemForm.adminFee} 
-                  onChange={(e) => setCustomItemForm({ ...customItemForm, adminFee: e.target.value })}
+                  placeholder="Contoh: 102500" 
+                  value={customItemForm.sellingPrice} 
+                  onChange={(e) => setCustomItemForm({ ...customItemForm, sellingPrice: e.target.value })}
                   className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none text-xs sm:text-sm"
+                  required
                 />
               </div>
 
