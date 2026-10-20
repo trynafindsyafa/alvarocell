@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import logoImg from './assets/logo.png';
-//import logoSvg from './assets/logo-alvarocell.svg'; // Mengimpor logo SVG
 import { 
   ShoppingCart, 
   Package, 
@@ -49,7 +48,7 @@ export default function App() {
   const [paidAmount, setPaidAmount] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // State Modal Item Manual / Nominal Bebas (Menggunakan Harga Modal & Harga Jual)
+  // State Modal Item Manual
   const [isCustomItemModalOpen, setIsCustomItemModalOpen] = useState(false);
   const [customItemForm, setCustomItemForm] = useState({
     name: '',
@@ -89,10 +88,11 @@ export default function App() {
     if (!error && data) setProducts(data);
   };
 
+  // ✅ PERBAIKAN 1: Query Fetch Orders mengambil seluruh kolom produk relasi secara lengkap
   const fetchOrders = async () => {
     const { data, error } = await supabase
       .from('orders')
-      .select('*, order_items(*, products(*))')
+      .select('*, order_items(*, products(id, name, purchase_price, selling_price))')
       .order('created_at', { ascending: false });
     if (!error && data) setOrders(data);
   };
@@ -210,7 +210,6 @@ export default function App() {
     }
   };
 
-  // HANDLER: Menambahkan Item Manual dengan Harga Modal & Harga Jual[cite: 9]
   const handleAddCustomItem = (e) => {
     e.preventDefault();
     if (!customItemForm.name || customItemForm.purchasePrice === '' || customItemForm.sellingPrice === '') {
@@ -226,18 +225,11 @@ export default function App() {
       return;
     }
 
-    const profitNum = sellingNum - purchaseNum;
-    let finalItemName = customItemForm.name;
-    
-    if (profitNum > 0) {
-      finalItemName += ` (Untung: Rp ${profitNum.toLocaleString('id-ID')})`;
-    }
-
     const customItem = {
       id: 'custom-' + Date.now(),
-      name: finalItemName,
+      name: customItemForm.name,
       selling_price: sellingNum,
-      purchase_price: purchaseNum, // Harga modal tersimpan untuk perhitungan profit[cite: 9]
+      purchase_price: purchaseNum,
       stock: 999999,
       quantity: 1,
       isCustom: true
@@ -317,13 +309,12 @@ export default function App() {
 
       if (orderError) throw orderError;
 
-      // PERBAIKAN: Menyertakan purchase_price ke database order_items
       const orderItems = cart.map(item => ({
         order_id: orderData.id,
         product_id: item.isCustom ? null : item.id,
         quantity: item.quantity,
         price: item.selling_price,
-        purchase_price: item.purchase_price || 0
+        purchase_price: item.isCustom ? (item.purchase_price || 0) : (item.purchase_price || 0)
       }));
 
       const { error: itemsError } = await supabase.from('order_items').insert(orderItems);
@@ -405,7 +396,7 @@ export default function App() {
     return matchCategory && matchSearch;
   });
 
-  // --- KALKULASI LAPORAN KEUNTUNGAN ---
+  // ✅ PERBAIKAN 2: KALKULASI LAPORAN KEUNTUNGAN YANG AKURAT
   const calculateProfitData = () => {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -431,10 +422,19 @@ export default function App() {
       let orderRevenue = order.total_amount || 0;
 
       order.order_items?.forEach(item => {
-        // Mengambil purchase_price langsung dari order_items jika ada, atau dari produk reguler
-        const costPrice = item.purchase_price ?? item.products?.purchase_price ?? 0;
-        const sellPrice = item.price || 0;
-        const qty = item.quantity || 0;
+        let costPrice = 0;
+
+        // Jika barang berasal dari produk reguler (ada relasi produk)
+        if (item.product_id && item.products) {
+          costPrice = Number(item.products.purchase_price) || 0;
+        } else {
+          // Jika item manual / custom
+          costPrice = Number(item.purchase_price) || 0;
+        }
+
+        const sellPrice = Number(item.price) || 0;
+        const qty = Number(item.quantity) || 0;
+
         orderProfit += (sellPrice - costPrice) * qty;
       });
 
