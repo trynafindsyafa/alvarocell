@@ -14,7 +14,8 @@ import {
   X,
   Calendar,
   Eye,
-  Tag
+  Tag,
+  Filter
 } from 'lucide-react';
 
 export default function App() {
@@ -48,6 +49,9 @@ export default function App() {
   const [paidAmount, setPaidAmount] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // State Filter Riwayat (all, lunas, bon)
+  const [historyFilter, setHistoryFilter] = useState('all');
+
   // State Modal Item Manual
   const [isCustomItemModalOpen, setIsCustomItemModalOpen] = useState(false);
   const [customItemForm, setCustomItemForm] = useState({
@@ -56,12 +60,13 @@ export default function App() {
     sellingPrice: ''   // Harga Jual Total
   });
 
-  // State Modal Edit Order
+  // State Modal Edit Order / Pelunasan
   const [editingOrder, setEditingOrder] = useState(null);
   const [editOrderForm, setEditOrderForm] = useState({
     cashier_name: '',
     payment_method: 'Cash',
-    total_amount: 0
+    total_amount: 0,
+    paid_amount: 0
   });
 
   // State Filter & Pop-up Detail Laporan Keuntungan
@@ -88,7 +93,6 @@ export default function App() {
     if (!error && data) setProducts(data);
   };
 
-  // ✅ PERBAIKAN 1: Query Fetch Orders mengambil seluruh kolom produk relasi secara lengkap
   const fetchOrders = async () => {
     const { data, error } = await supabase
       .from('orders')
@@ -278,19 +282,22 @@ export default function App() {
   };
 
   const totalAmount = cart.reduce((sum, item) => sum + (item.selling_price * item.quantity), 0);
-  const numericPaidAmount = Number(paidAmount) || 0;
+  const numericPaidAmount = paidAmount === '' ? totalAmount : (Number(paidAmount) || 0);
   const changeOrDebt = numericPaidAmount - totalAmount;
 
   const handleCheckout = async () => {
     if (cart.length === 0) return alert('Keranjang masih kosong!');
 
-    if (changeOrDebt < 0 && (!customerName || customerName.trim() === '' || customerName.toLowerCase() === 'umum')) {
+    const actualPaid = paidAmount === '' ? totalAmount : (Number(paidAmount) || 0);
+    const calculatedDebt = actualPaid - totalAmount;
+
+    if (calculatedDebt < 0 && (!customerName || customerName.trim() === '' || customerName.toLowerCase() === 'umum')) {
       alert('Pembayaran kurang / berhutang! Mohon isi Nama Pembeli dengan lengkap.');
       return;
     }
 
     let finalMethod = paymentMethod;
-    if (changeOrDebt < 0) {
+    if (calculatedDebt < 0) {
       finalMethod = 'BON';
     }
 
@@ -301,6 +308,7 @@ export default function App() {
         .from('orders')
         .insert([{
           total_amount: totalAmount,
+          paid_amount: actualPaid,
           payment_method: finalMethod,
           cashier_name: customerName || 'Umum'
         }])
@@ -314,7 +322,7 @@ export default function App() {
         product_id: item.isCustom ? null : item.id,
         quantity: item.quantity,
         price: item.selling_price,
-        purchase_price: item.isCustom ? (item.purchase_price || 0) : (item.purchase_price || 0)
+        purchase_price: item.purchase_price || 0
       }));
 
       const { error: itemsError } = await supabase.from('order_items').insert(orderItems);
@@ -329,10 +337,10 @@ export default function App() {
         }
       }
 
-      if (changeOrDebt < 0) {
-        alert(`Transaksi disimpan sebagai BON/Hutang!\nSisa Utang Pembeli: Rp ${Math.abs(changeOrDebt).toLocaleString('id-ID')}`);
+      if (calculatedDebt < 0) {
+        alert(`Transaksi disimpan sebagai BON/Hutang!\nKurang Bayar: Rp ${Math.abs(calculatedDebt).toLocaleString('id-ID')}`);
       } else {
-        alert(`Transaksi berhasil!\nKembalian: Rp ${changeOrDebt.toLocaleString('id-ID')}`);
+        alert(`Transaksi berhasil!\nKembalian: Rp ${calculatedDebt.toLocaleString('id-ID')}`);
       }
 
       setCart([]);
@@ -353,7 +361,8 @@ export default function App() {
     setEditOrderForm({
       cashier_name: order.cashier_name || 'Umum',
       payment_method: order.payment_method || 'Cash',
-      total_amount: order.total_amount || 0
+      total_amount: order.total_amount || 0,
+      paid_amount: order.paid_amount ?? order.total_amount ?? 0
     });
   };
 
@@ -361,12 +370,21 @@ export default function App() {
     e.preventDefault();
     if (!editingOrder) return;
 
+    const newPaid = Number(editOrderForm.paid_amount) || 0;
+    const newTotal = Number(editOrderForm.total_amount) || 0;
+    let newMethod = editOrderForm.payment_method;
+
+    if (newPaid >= newTotal && newMethod === 'BON') {
+      newMethod = 'Cash';
+    }
+
     const { error } = await supabase
       .from('orders')
       .update({
         cashier_name: editOrderForm.cashier_name,
-        payment_method: editOrderForm.payment_method,
-        total_amount: Number(editOrderForm.total_amount) || 0
+        payment_method: newMethod,
+        total_amount: newTotal,
+        paid_amount: newPaid
       })
       .eq('id', editingOrder.id);
 
@@ -396,7 +414,7 @@ export default function App() {
     return matchCategory && matchSearch;
   });
 
-  // ✅ PERBAIKAN 2: KALKULASI LAPORAN KEUNTUNGAN YANG AKURAT
+  // KALKULASI LAPORAN KEUNTUNGAN
   const calculateProfitData = () => {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -424,11 +442,9 @@ export default function App() {
       order.order_items?.forEach(item => {
         let costPrice = 0;
 
-        // Jika barang berasal dari produk reguler (ada relasi produk)
         if (item.product_id && item.products) {
           costPrice = Number(item.products.purchase_price) || 0;
         } else {
-          // Jika item manual / custom
           costPrice = Number(item.purchase_price) || 0;
         }
 
@@ -675,7 +691,7 @@ export default function App() {
                   <span>Uang Dibayarkan:</span>
                   <input 
                     type="number" 
-                    placeholder="Rp 0"
+                    placeholder={`Rp ${totalAmount.toLocaleString('id-ID')}`}
                     value={paidAmount} 
                     onChange={(e) => setPaidAmount(e.target.value)}
                     className="border rounded px-2 py-1 text-right text-gray-800 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 w-32 text-xs sm:text-sm"
@@ -691,7 +707,7 @@ export default function App() {
                   <div className={`flex justify-between text-xs sm:text-sm font-bold p-2 rounded-lg ${
                     changeOrDebt < 0 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'
                   }`}>
-                    <span>{changeOrDebt < 0 ? 'Sisa Utang (BON):' : 'Kembalian:'}</span>
+                    <span>{changeOrDebt < 0 ? 'Kurang Bayar (BON):' : 'Kembalian:'}</span>
                     <span>Rp {Math.abs(changeOrDebt).toLocaleString('id-ID')}</span>
                   </div>
                 )}
@@ -703,7 +719,7 @@ export default function App() {
                     changeOrDebt < 0 ? 'bg-red-600 hover:bg-red-700' : 'bg-indigo-600 hover:bg-indigo-700'
                   }`}
                 >
-                  {loading ? 'Memproses...' : (changeOrDebt < 0 ? 'Simpan Transaksi (BON)' : 'Proses Pembayaran')}
+                  {loading ? 'Memproses...' : (changeOrDebt < 0 ? 'Simpan Transaksi (BON/Kurang)' : 'Proses Pembayaran')}
                 </button>
               </div>
             </div>
@@ -869,67 +885,134 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 4: RIWAYAT PENJUALAN */}
+        {/* TAB 4: RIWAYAT PENJUALAN (DENGAN DROPDOWN FILTER STATUS) */}
         {activeTab === 'history' && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto w-full">
-            <table className="w-full text-left border-collapse">
-              <thead className="bg-gray-50 border-b">
-                <tr>
-                  <th className="p-3 text-xs sm:text-sm font-semibold text-gray-600">Tanggal</th>
-                  <th className="p-3 text-xs sm:text-sm font-semibold text-gray-600">Nama Pembeli</th>
-                  <th className="p-3 text-xs sm:text-sm font-semibold text-gray-600">Metode / Status</th>
-                  <th className="p-3 text-xs sm:text-sm font-semibold text-gray-600">Detail Barang</th>
-                  <th className="p-3 text-xs sm:text-sm font-semibold text-gray-600">Total Belanja</th>
-                  <th className="p-3 text-xs sm:text-sm font-semibold text-gray-600 text-center">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y text-xs sm:text-sm">
-                {orders.map(o => (
-                  <tr key={o.id} className="hover:bg-gray-50">
-                    <td className="p-3 text-gray-600 whitespace-nowrap">
-                      {new Date(o.created_at).toLocaleString('id-ID')}
-                    </td>
-                    <td className="p-3 font-medium text-gray-800">{o.cashier_name || 'Umum'}</td>
-                    <td className="p-3">
-                      <span className={`px-2 py-0.5 rounded text-[10px] sm:text-xs font-semibold ${
-                        o.payment_method === 'BON' 
-                          ? 'bg-red-100 text-red-700 border border-red-200' 
-                          : 'bg-green-100 text-green-700'
-                      }`}>
-                        {o.payment_method === 'BON' ? 'BON (Hutang)' : o.payment_method}
-                      </span>
-                    </td>
-                    <td className="p-3 text-gray-600">
-                      {o.order_items?.map(item => `${item.products?.name || item.name || 'Layanan/Item'} (${item.quantity}x)`).join(', ')}
-                    </td>
-                    <td className="p-3 font-bold text-indigo-600 whitespace-nowrap">
-                      Rp {o.total_amount?.toLocaleString('id-ID')}
-                    </td>
-                    <td className="p-3 flex justify-center gap-1.5">
-                      <button 
-                        onClick={() => handleOpenEditOrder(o)} 
-                        title="Edit / Pelunasan"
-                        className="p-1.5 bg-yellow-50 text-yellow-600 rounded hover:bg-yellow-100 transition"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </button>
-                      <button 
-                        onClick={() => handleDeleteOrder(o.id)} 
-                        title="Hapus"
-                        className="p-1.5 bg-red-50 text-red-600 rounded hover:bg-red-100 transition"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {orders.length === 0 && (
+          <div className="space-y-4 w-full">
+            {/* BAR FILTER STATUS */}
+            <div className="bg-white p-3 sm:p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col sm:flex-row justify-between items-center gap-3">
+              <div className="flex items-center gap-2 text-gray-700 font-semibold text-sm">
+                <Filter className="w-4 h-4 text-indigo-600" /> Filter Status Transaksi:
+              </div>
+              <div className="flex gap-2 w-full sm:w-auto">
+                <select 
+                  value={historyFilter} 
+                  onChange={(e) => setHistoryFilter(e.target.value)}
+                  className="w-full sm:w-48 p-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white font-medium"
+                >
+                  <option value="all">Semua Riwayat</option>
+                  <option value="lunas">Lunas</option>
+                  <option value="bon">BON / Belum Lunas</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto w-full">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-gray-50 border-b">
                   <tr>
-                    <td colSpan="6" className="p-4 text-center text-gray-400">Belum ada riwayat transaksi.</td>
+                    <th className="p-3 text-xs sm:text-sm font-semibold text-gray-600">Tanggal</th>
+                    <th className="p-3 text-xs sm:text-sm font-semibold text-gray-600">Nama Pembeli</th>
+                    <th className="p-3 text-xs sm:text-sm font-semibold text-gray-600">Metode / Status</th>
+                    <th className="p-3 text-xs sm:text-sm font-semibold text-gray-600">Detail Barang</th>
+                    <th className="p-3 text-xs sm:text-sm font-semibold text-gray-600">Total Belanja</th>
+                    <th className="p-3 text-xs sm:text-sm font-semibold text-gray-600">Uang Dibayar</th>
+                    <th className="p-3 text-xs sm:text-sm font-semibold text-gray-600">Kekurangan / Sisa Utang</th>
+                    <th className="p-3 text-xs sm:text-sm font-semibold text-gray-600 text-center">Aksi</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y text-xs sm:text-sm">
+                  {orders
+                    .filter(o => {
+                      const total = Number(o.total_amount) || 0;
+                      let paid = 0;
+                      if (o.paid_amount !== null && o.paid_amount !== undefined && Number(o.paid_amount) > 0) {
+                        paid = Number(o.paid_amount);
+                      } else if (o.payment_method !== 'BON') {
+                        paid = total;
+                      } else {
+                        paid = 0;
+                      }
+                      const isBon = (paid - total) < 0 || o.payment_method === 'BON';
+
+                      if (historyFilter === 'lunas') return !isBon;
+                      if (historyFilter === 'bon') return isBon;
+                      return true; // 'all'
+                    })
+                    .map(o => {
+                      const total = Number(o.total_amount) || 0;
+                      let paid = 0;
+                      if (o.paid_amount !== null && o.paid_amount !== undefined && Number(o.paid_amount) > 0) {
+                        paid = Number(o.paid_amount);
+                      } else if (o.payment_method !== 'BON') {
+                        paid = total;
+                      } else {
+                        paid = 0;
+                      }
+
+                      const diff = paid - total;
+
+                      return (
+                        <tr key={o.id} className="hover:bg-gray-50">
+                          <td className="p-3 text-gray-600 whitespace-nowrap">
+                            {new Date(o.created_at).toLocaleString('id-ID')}
+                          </td>
+                          <td className="p-3 font-medium text-gray-800">{o.cashier_name || 'Umum'}</td>
+                          <td className="p-3">
+                            <span className={`px-2 py-0.5 rounded text-[10px] sm:text-xs font-semibold ${
+                              diff < 0 || o.payment_method === 'BON' 
+                                ? 'bg-red-100 text-red-700 border border-red-200' 
+                                : 'bg-green-100 text-green-700'
+                            }`}>
+                              {diff < 0 || o.payment_method === 'BON' ? 'BON (Belum Lunas)' : o.payment_method}
+                            </span>
+                          </td>
+                          <td className="p-3 text-gray-600">
+                            {o.order_items?.map(item => `${item.products?.name || item.name || 'Layanan/Item'} (${item.quantity}x)`).join(', ')}
+                          </td>
+                          <td className="p-3 font-bold text-gray-800 whitespace-nowrap">
+                            Rp {total.toLocaleString('id-ID')}
+                          </td>
+                          <td className="p-3 font-semibold text-gray-700 whitespace-nowrap">
+                            Rp {paid.toLocaleString('id-ID')}
+                          </td>
+                          <td className="p-3 font-bold whitespace-nowrap">
+                            {diff < 0 ? (
+                              <span className="text-red-600 bg-red-50 px-2 py-1 rounded-md border border-red-100">
+                                Kurang Rp {Math.abs(diff).toLocaleString('id-ID')}
+                              </span>
+                            ) : (
+                              <span className="text-green-600 font-semibold">
+                                Lunas {diff > 0 ? `(Kembali Rp ${diff.toLocaleString('id-ID')})` : ''}
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-3 flex justify-center gap-1.5">
+                            <button 
+                              onClick={() => handleOpenEditOrder(o)} 
+                              title="Edit / Pelunasan"
+                              className="p-1.5 bg-yellow-50 text-yellow-600 rounded hover:bg-yellow-100 transition"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteOrder(o.id)} 
+                              title="Hapus"
+                              className="p-1.5 bg-red-50 text-red-600 rounded hover:bg-red-100 transition"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  {orders.length === 0 && (
+                    <tr>
+                      <td colSpan="8" className="p-4 text-center text-gray-400">Belum ada riwayat transaksi.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
@@ -1231,11 +1314,22 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Total Pembayaran (Rp)</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Total Pembayaran / Belanja (Rp)</label>
                 <input 
                   type="number" 
                   value={editOrderForm.total_amount} 
                   onChange={(e) => setEditOrderForm({ ...editOrderForm, total_amount: e.target.value })}
+                  className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none text-xs sm:text-sm"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Uang Dibayarkan (Rp)</label>
+                <input 
+                  type="number" 
+                  value={editOrderForm.paid_amount} 
+                  onChange={(e) => setEditOrderForm({ ...editOrderForm, paid_amount: e.target.value })}
                   className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none text-xs sm:text-sm"
                   required
                 />
