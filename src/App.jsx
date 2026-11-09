@@ -49,8 +49,9 @@ export default function App() {
   const [paidAmount, setPaidAmount] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // State Filter Riwayat (all, lunas, bon)
+  // State Filter & Search Riwayat
   const [historyFilter, setHistoryFilter] = useState('all');
+  const [historySearchQuery, setHistorySearchQuery] = useState('');
 
   // State Modal Item Manual
   const [isCustomItemModalOpen, setIsCustomItemModalOpen] = useState(false);
@@ -885,24 +886,34 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 4: RIWAYAT PENJUALAN (DENGAN DROPDOWN FILTER STATUS) */}
+        {/* TAB 4: RIWAYAT PENJUALAN (DENGAN FILTER STATUS & PENCARIAN) */}
         {activeTab === 'history' && (
           <div className="space-y-4 w-full">
-            {/* BAR FILTER STATUS */}
+            {/* BAR FILTER & PENCARIAN */}
             <div className="bg-white p-3 sm:p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col sm:flex-row justify-between items-center gap-3">
-              <div className="flex items-center gap-2 text-gray-700 font-semibold text-sm">
-                <Filter className="w-4 h-4 text-indigo-600" /> Filter Status Transaksi:
-              </div>
-              <div className="flex gap-2 w-full sm:w-auto">
+              <div className="flex items-center gap-2 text-gray-700 font-semibold text-sm w-full sm:w-auto">
+                <Filter className="w-4 h-4 text-indigo-600" /> Filter Status:
                 <select 
                   value={historyFilter} 
                   onChange={(e) => setHistoryFilter(e.target.value)}
-                  className="w-full sm:w-48 p-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white font-medium"
+                  className="p-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white font-medium ml-1"
                 >
                   <option value="all">Semua Riwayat</option>
                   <option value="lunas">Lunas</option>
                   <option value="bon">BON / Belum Lunas</option>
                 </select>
+              </div>
+
+              {/* KOTAK PENCARIAN RIWAYAT */}
+              <div className="relative w-full sm:w-72">
+                <Search className="w-4 h-4 absolute left-3 top-3 text-gray-400" />
+                <input 
+                  type="text" 
+                  placeholder="Cari pembeli / barang..." 
+                  value={historySearchQuery}
+                  onChange={(e) => setHistorySearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                />
               </div>
             </div>
 
@@ -934,9 +945,22 @@ export default function App() {
                       }
                       const isBon = (paid - total) < 0 || o.payment_method === 'BON';
 
-                      if (historyFilter === 'lunas') return !isBon;
-                      if (historyFilter === 'bon') return isBon;
-                      return true; // 'all'
+                      // Filter Status
+                      if (historyFilter === 'lunas' && isBon) return false;
+                      if (historyFilter === 'bon' && !isBon) return false;
+
+                      // Filter Search Text (Nama Pembeli / Metode / Nama Barang)
+                      if (historySearchQuery.trim() !== '') {
+                        const query = historySearchQuery.toLowerCase();
+                        const buyerMatch = (o.cashier_name || '').toLowerCase().includes(query);
+                        const methodMatch = (o.payment_method || '').toLowerCase().includes(query);
+                        const itemsMatch = o.order_items?.some(item => 
+                          (item.products?.name || item.name || '').toLowerCase().includes(query)
+                        );
+                        if (!buyerMatch && !methodMatch && !itemsMatch) return false;
+                      }
+
+                      return true;
                     })
                     .map(o => {
                       const total = Number(o.total_amount) || 0;
